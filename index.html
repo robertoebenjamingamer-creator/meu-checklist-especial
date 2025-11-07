@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checklist de Rotina - Presente de Aniversário</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        :root {
+            --primary-color: #6366f1; /* Indigo 500 */
+            --secondary-color: #fcd34d; /* Amber 300 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Gray 100 */
+        }
+        .task-item {
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+        }
+        .task-completed {
+            background-color: #d1fae5; /* Green 100 */
+            border-left: 5px solid #10b981; /* Emerald 500 */
+        }
+        .task-completed .task-text {
+            text-decoration: line-through;
+            color: #6b7280; /* Gray 500 */
+        }
+        .task-default {
+            background-color: #ffffff;
+            border-left: 5px solid var(--primary-color);
+        }
+        .timer-running {
+            background-color: #fef3c7; /* Amber 100 */
+            border-left: 5px solid #fbbf24; /* Amber 400 */
+        }
+        /* Estilo para animação de botão */
+        .check-btn {
+            transition: transform 0.1s;
+        }
+        .check-btn:active {
+            transform: scale(0.9);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <header class="text-center mb-10">
+        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight">
+            🎉 Checklist de Rotina <span class="text-indigo-600">Especial</span> 🎉
+        </h1>
+        <p class="text-lg text-gray-600 mt-2">Um presente de aniversário cheio de amor e organização!</p>
+        
+        <button id="music-btn" onclick="toggleMusic()" class="mt-4 px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition shadow-md">
+            <i class="fas fa-volume-mute"></i> Música: Desligada
+        </button>
+
+        <p id="user-id-display" class="text-xs text-gray-400 mt-2"></p>
+    </header>
+
+    <main id="checklist-container" class="max-w-4xl mx-auto space-y-12">
+        <div id="loading-indicator" class="text-center p-6 bg-white rounded-xl shadow-lg">
+            <i class="fas fa-spinner fa-spin text-3xl text-indigo-500"></i>
+            <p class="mt-2 text-gray-600">Carregando a rotina...</p>
+        </div>
+    </main>
+
+    <div id="modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 id="modal-title" class="text-xl font-bold text-gray-800 mb-4"></h3>
+            <p id="modal-message" class="text-gray-600 mb-6"></p>
+            <div class="flex justify-end space-x-3">
+                <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">
+                    Cancelar
+                </button>
+                <button id="modal-confirm-btn" class="px-4 py-2 bg-indigo-500 text-white font-semibold rounded-lg hover:bg-indigo-600 transition">
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
+        <script>
+        // Removemos as importações do Firebase e a autenticação
+        
+        // Simulamos que a autenticação está pronta, pois não dependemos mais dela
+        let isAuthReady = true; 
+
+        const STATE = {
+            tasks: {}, // {taskId: boolean} - Completion status
+            timerStart: null,
+            timerRemaining: 7200, // 2 hours in seconds (7200)
+            timerInterval: null,
+            lastCheckDate: null, // Rastreia o último dia de uso (YYYY-MM-DD)
+        };
+
+        const TASK_DATA = {
+            mom: [
+                { id: 'mom-1', text: 'Acordar' },
+                { id: 'mom-2', text: 'Dar comida para o peixe Bilisco' },
+                { id: 'mom-3', text: 'Fazer o café da manhã' },
+                { id: 'mom-4', text: 'Lavar a louça (pós-café)' },
+                { id: 'mom-5', text: 'Passar a vassoura na casa' },
+                { id: 'mom-6', text: 'Lavar a roupa (início)' },
+                { id: 'mom-7', text: 'Cozinhar o almoço' },
+                { id: 'mom-8', text: 'Lavar a louça (pós-almoço)' },
+                { id: 'mom-9', text: 'Reclamar com as crianças para tomar banho (pós-escola)' },
+                { id: 'mom-10', text: 'Ler a Bíblia' },
+                { id: 'mom-11', text: 'Orar' },
+                { id: 'mom-12', text: 'Fazer o café da noite (Jantar)' },
+                { id: 'mom-13', text: 'Lavar a louça (pós-jantar)' },
+            ],
+            kids: [
+                { id: 'kid-1', text: 'Levantar' },
+                { id: 'kid-2', text: 'Tomar café' },
+                { id: 'kid-3', text: 'Trocar a roupa' },
+                { id: 'kid-4', text: 'Ler a Bíblia' },
+                { id: 'kid-5', text: 'Escovar os dentes (manhã)' },
+                { id: 'kid-6', text: 'Ir para a Escola' },
+                { id: 'kid-7', text: 'Voltar da escola' },
+                { id: 'kid-8', text: 'Tomar banho (pós-escola)' },
+                { id: 'kid-9', text: 'Arrumar as coisas/organizar o quarto' },
+                { id: 'kid-10', text: 'Escovar os dentes (pós-jantar)' },
+                { id: 'kid-11', text: 'Fazer o dever de casa' },
+                { id: 'kid-12', text: '2h de Tela (Cronômetro) ⏳' },
+                { id: 'kid-13', text: 'Tomar o café/lanche da noite' },
+                { id: 'kid-14', text: 'Escovar os dentes (antes de dormir)' },
+                { id: 'kid-15', text: 'Dormir' },
+            ],
+            secondary: [
+                { id: 'sec-2', text: 'Trocar a água do aquário do Bilisco (duas em 2 semanas)' },
+            ]
+        };
+
+        // --- Funções de Persistência (LocalStorage) ---
+
+        // Função auxiliar para obter o estado inicial de todas as tarefas
+        function getInitialTaskState() {
+            const initialTasks = {};
+            const allTasks = [...TASK_DATA.mom, ...TASK_DATA.kids, ...TASK_DATA.secondary]; 
+            allTasks.forEach(task => { initialTasks[task.id] = false; });
+            return initialTasks;
+        }
+
+        function loadTasks() {
+            const loadingIndicator = document.getElementById('loading-indicator');
+            loadingIndicator.classList.add('hidden'); // Esconde o loading
+
+            const savedState = localStorage.getItem('checklistState');
+            const todayDateString = new Date().toISOString().slice(0, 10);
+            
+            let loadedData = {};
+            let checklistNeedsReset = false;
+
+            if (savedState) {
+                try {
+                    loadedData = JSON.parse(savedState);
+                    const lastCheckDate = loadedData.lastCheckDate;
+
+                    // CHECK: Novo dia detectado
+                    if (lastCheckDate && lastCheckDate !== todayDateString) {
+                        console.log("Novo dia detectado. Reiniciando checklist.");
+                        checklistNeedsReset = true;
+                    }
+
+                } catch (e) {
+                    console.error("Erro ao analisar o localStorage. Inicializando estado.", e);
+                    checklistNeedsReset = true;
+                }
+            } else {
+                console.log("Nenhum estado salvo encontrado. Inicializando.");
+                checklistNeedsReset = true;
+            }
+            
+            // Lógica de Reset/Inicialização
+            if (checklistNeedsReset) {
+                STATE.tasks = getInitialTaskState();
+                STATE.timerStart = null;
+                STATE.timerRemaining = 7200;
+                STATE.lastCheckDate = todayDateString;
+                if (STATE.timerInterval) {
+                    clearInterval(STATE.timerInterval);
+                    STATE.timerInterval = null;
+                }
+                saveState(); // Salva o estado inicial
+            } else {
+                // Carrega dados existentes
+                const existingTasks = loadedData.tasks || {};
+                const allInitialTasks = getInitialTaskState();
+                
+                STATE.tasks = { ...allInitialTasks, ...existingTasks };
+                STATE.timerStart = loadedData.timerStart || null;
+                STATE.timerRemaining = loadedData.timerRemaining || 7200;
+                STATE.lastCheckDate = loadedData.lastCheckDate || todayDateString;
+            }
+
+            console.log("Dados carregados/atualizados do LocalStorage.", STATE);
+
+            startTimer(); // Garante que o timer inicie/recalcule
+            renderChecklist();
+        }
+
+
+        function saveState() {
+            // Atualiza a data de última verificação (hoje) antes de salvar
+            const todayDateString = new Date().toISOString().slice(0, 10);
+            STATE.lastCheckDate = todayDateString; 
+
+            const stateToSave = {
+                tasks: STATE.tasks,
+                timerStart: STATE.timerStart,
+                timerRemaining: STATE.timerRemaining,
+                lastCheckDate: STATE.lastCheckDate 
+            };
+
+            try {
+                localStorage.setItem('checklistState', JSON.stringify(stateToSave));
+                // console.log("Estado salvo com sucesso no LocalStorage.");
+            } catch (e) {
+                console.error("Erro ao salvar o estado no LocalStorage: ", e);
+            }
+        }
+
+        // --- Funções de Áudio (Tone.js) (SEM ALTERAÇÕES) ---
+        let clickSynth;
+        let ambientSynth;
+        let ambientLoop;
+        let isMusicPlaying = false;
+
+        function setupAudio() {
+            clickSynth = new Tone.MembraneSynth({
+                pitchDecay: 0.008,
+                envelope: {
+                    attack: 0.001,
+                    decay: 0.2,
+                    sustain: 0.01,
+                    release: 0.01,
+                }
+            }).toDestination();
+
+            ambientSynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sine" },
+                envelope: {
+                    attack: 2,
+                    decay: 0.1,
+                    sustain: 0.9,
+                    release: 4,
+                }
+            }).chain(new Tone.Volume(-20).toDestination());
+
+            const loopChords = ["C3", "G3", "A3", "F3"];
+            let chordIndex = 0;
+            ambientLoop = new Tone.Loop(time => {
+                const chord = loopChords[chordIndex % loopChords.length];
+                ambientSynth.triggerAttackRelease(chord, "4n", time);
+                chordIndex++;
+            }, "4n").start(0); 
+
+            Tone.Transport.bpm.value = 60;
+        }
+
+        function playClick() {
+            if (clickSynth && Tone.context.state === 'running') {
+                clickSynth.triggerAttackRelease("G4", "8n");
+            }
+        }
+
+        window.toggleMusic = function() {
+            if (Tone.context.state !== 'running') {
+                Tone.start(); 
+            }
+
+            if (isMusicPlaying) {
+                Tone.Transport.stop();
+                isMusicPlaying = false;
+            } else {
+                Tone.Transport.start();
+                isMusicPlaying = true;
+            }
+            updateMusicButton();
+        }
+
+        function updateMusicButton() {
+            const btn = document.getElementById('music-btn');
+            if (btn) {
+                btn.innerHTML = isMusicPlaying 
+                    ? '<i class="fas fa-volume-up"></i> Música: Ligada' 
+                    : '<i class="fas fa-volume-mute"></i> Música: Desligada';
+                btn.classList.toggle('bg-gray-500', !isMusicPlaying);
+                btn.classList.toggle('hover:bg-gray-600', !isMusicPlaying);
+                btn.classList.toggle('bg-green-500', isMusicPlaying);
+                btn.classList.toggle('hover:bg-green-600', isMusicPlaying);
+            }
+        }
+
+
+        // --- Funções do Cronômetro (Task ID: kid-12) (SEM ALTERAÇÕES) ---
+        
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function updateTimerDisplay() {
+            const timerElement = document.getElementById('timer-display');
+            const taskItem = document.getElementById('task-kid-12');
+            
+            if (!timerElement || !taskItem) return;
+
+            const display = formatTime(Math.max(0, STATE.timerRemaining));
+            timerElement.textContent = display;
+
+            taskItem.classList.remove('task-completed', 'timer-running', 'task-default');
+            
+            if (STATE.timerInterval) {
+                taskItem.classList.add('timer-running');
+            } else if (STATE.timerRemaining <= 0) {
+                taskItem.classList.add('task-completed');
+            } else {
+                taskItem.classList.add('task-default');
+            }
+        }
+
+        function toggleTimer() {
+            if (!isAuthReady) return;
+
+            if (STATE.timerInterval) {
+                clearInterval(STATE.timerInterval);
+                STATE.timerInterval = null;
+                if (STATE.timerStart) {
+                    const elapsed = Math.floor((Date.now() - STATE.timerStart) / 1000);
+                    STATE.timerRemaining = Math.max(0, STATE.timerRemaining - elapsed); 
+                }
+                STATE.timerStart = null;
+                console.log("Cronômetro pausado. Restante:", STATE.timerRemaining);
+
+            } else {
+                if (STATE.timerRemaining <= 0) {
+                    STATE.timerRemaining = 7200;
+                    STATE.tasks['kid-12'] = false;
+                }
+                
+                STATE.timerStart = Date.now();
+                
+                STATE.timerInterval = setInterval(() => {
+                    STATE.timerRemaining = Math.max(0, STATE.timerRemaining - 1);
+                    updateTimerDisplay();
+                    
+                    if (STATE.timerRemaining <= 0) {
+                        clearInterval(STATE.timerInterval);
+                        STATE.timerInterval = null;
+                        STATE.timerRemaining = 0;
+                        STATE.tasks['kid-12'] = true;
+                        console.log("Cronômetro finalizado!");
+                        saveState(); 
+                    }
+
+                }, 1000);
+                console.log("Cronômetro iniciado/continuado.");
+            }
+            playClick();
+            updateTimerDisplay();
+            saveState(); 
+        }
+
+        function resetTimer() {
+            if (STATE.timerInterval) {
+                clearInterval(STATE.timerInterval);
+                STATE.timerInterval = null;
+            }
+            STATE.timerStart = null;
+            STATE.timerRemaining = 7200;
+            STATE.tasks['kid-12'] = false;
+            
+            playClick();
+            updateTimerDisplay();
+            saveState();
+        }
+
+        function startTimer() {
+            if (STATE.timerInterval) {
+                clearInterval(STATE.timerInterval);
+                STATE.timerInterval = null;
+            }
+            
+            if (STATE.timerStart && STATE.timerRemaining > 0) {
+                
+                const elapsedSinceStart = Math.floor((Date.now() - STATE.timerStart) / 1000);
+                
+                STATE.timerRemaining = Math.max(0, STATE.timerRemaining - elapsedSinceStart);
+
+                if (STATE.timerRemaining > 0) {
+                    STATE.timerInterval = setInterval(() => {
+                        STATE.timerRemaining = Math.max(0, STATE.timerRemaining - 1);
+                        updateTimerDisplay();
+
+                        if (STATE.timerRemaining <= 0) {
+                            clearInterval(STATE.timerInterval);
+                            STATE.timerInterval = null;
+                            STATE.tasks['kid-12'] = true;
+                            saveState();
+                        }
+                    }, 1000);
+                } else {
+                    STATE.timerRemaining = 0;
+                    STATE.tasks['kid-12'] = true;
+                    saveState();
+                }
+            }
+            updateTimerDisplay();
+        }
+
+        // --- Funções de UI e Renderização (SEM ALTERAÇÕES) ---
+
+        function showModal(title, message, onConfirm) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            
+            const modal = document.getElementById('modal');
+            modal.classList.remove('hidden');
+
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            const cancelBtn = document.getElementById('modal-cancel-btn');
+
+            const handleConfirm = () => {
+                onConfirm();
+                modal.classList.add('hidden');
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            const handleCancel = () => {
+                modal.classList.add('hidden');
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+        }
+
+        window.toggleTask = function(taskId) {
+            if (!isAuthReady) return; 
+
+            const currentState = STATE.tasks[taskId] || false;
+            
+            if (taskId === 'kid-12') {
+                if (currentState) {
+                    showModal(
+                        "Desmarcar Tarefa",
+                        "Tem certeza que deseja desmarcar '2h de Tela'? Isso irá resetar o cronômetro para 2 horas.",
+                        () => resetTimer()
+                    );
+                } else {
+                    showModal(
+                        "Atenção - Cronômetro",
+                        "A tarefa '2h de Tela' é concluída automaticamente ao final do cronômetro. Clique no botão de Play/Pause para gerenciar o tempo.",
+                        () => {}
+                    );
+                }
+                return;
+            }
+            
+            STATE.tasks[taskId] = !currentState;
+            playClick();
+            saveState();
+            renderChecklist();
+        }
+        
+        function createTaskHtml(task, index, section) {
+            const isCompleted = STATE.tasks[task.id] === true;
+            let iconClass = 'fas fa-check';
+            let itemClasses = 'task-item p-4 rounded-xl flex items-center justify-between transition-all ' + (isCompleted ? 'task-completed' : 'task-default');
+            let contentHtml = `<span class="task-text text-gray-800 font-medium text-lg flex-1">${index}. ${task.text}</span>`;
+            let buttonHtml = '';
+
+            if (task.id === 'kid-12') {
+                const isRunning = STATE.timerInterval !== null;
+                const isFinished = STATE.timerRemaining <= 0;
+                const buttonIcon = isRunning ? 'fas fa-pause' : (isFinished ? 'fas fa-undo' : 'fas fa-play');
+                const buttonText = isRunning ? 'Pausar' : (isFinished ? 'Reiniciar' : 'Iniciar');
+                
+                contentHtml = `
+                    <div class="flex-1 space-y-1">
+                        <span class="task-text text-gray-800 font-medium text-lg block">${index}. ${task.text}</span>
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-clock text-amber-600"></i>
+                            <span id="timer-display" class="font-mono text-xl text-amber-800">02:00:00</span>
+                        </div>
+                    </div>
+                `;
+                buttonHtml = `
+                    <button onclick="${isFinished ? 'resetTimer()' : 'toggleTimer()'}"
+                        class="check-btn px-4 py-2 ml-4 rounded-full ${isFinished ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600'} text-white transition duration-150 shadow-md">
+                        <i class="${buttonIcon}"></i> ${buttonText}
+                    </button>
+                    ${!isRunning && STATE.timerRemaining < 7200 && !isFinished ? `
+                        <button onclick="resetTimer()"
+                            class="check-btn px-4 py-2 ml-2 rounded-full bg-gray-500 text-white hover:bg-gray-600 transition duration-150 shadow-md">
+                            <i class="fas fa-undo"></i> Resetar
+                        </button>
+                    ` : ''}
+                `;
+            } else {
+                const btnColor = isCompleted ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-indigo-500 hover:bg-indigo-600';
+                buttonHtml = `
+                    <button onclick="toggleTask('${task.id}')"
+                        class="check-btn w-10 h-10 ml-4 rounded-full ${btnColor} text-white flex items-center justify-center shadow-lg">
+                        <i class="${iconClass}"></i>
+                    </button>
+                `;
+            }
+
+            return `
+                <div id="task-${task.id}" class="${itemClasses}" data-task-id="${task.id}">
+                    ${contentHtml}
+                    <div class="flex items-center">
+                        ${buttonHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderChecklist() {
+            const container = document.getElementById('checklist-container');
+            if (!container) return;
+
+            let html = '';
+
+            html += createSectionHtml('Tarefas da Mãe', 'fas fa-female', 'text-indigo-600', TASK_DATA.mom);
+            html += createSectionHtml('Rotina das Crianças', 'fas fa-child', 'text-pink-600', TASK_DATA.kids);
+            html += createSectionHtml('Tarefas Secundárias', 'fas fa-broom', 'text-teal-600', TASK_DATA.secondary);
+
+            container.innerHTML = html;
+            updateTimerDisplay();
+            updateMusicButton();
+        }
+
+        function createSectionHtml(title, icon, colorClass, tasks) {
+            let tasksHtml = tasks.map((task, index) => createTaskHtml(task, index + 1, title)).join('');
+
+            return `
+                <section class="bg-white p-6 rounded-2xl shadow-xl">
+                    <h2 class="text-3xl font-bold mb-6 flex items-center ${colorClass}">
+                        <i class="${icon} mr-3"></i>
+                        ${title}
+                    </h2>
+                    <div class="space-y-4">
+                        ${tasksHtml}
+                    </div>
+                </section>
+            `;
+        }
+
+
+        // --- Inicialização ---
+
+        window.onload = function () {
+            // 1. Carrega o estado salvo no LocalStorage
+            loadTasks();
+            
+            // 2. Configura o áudio
+            setupAudio();
+        };
+    </script>
+
+
+</body>
+</html>
