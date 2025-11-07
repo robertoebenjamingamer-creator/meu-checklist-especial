@@ -4,11 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Checklist de Rotina - Presente de Aniversário</title>
-    <!-- Carregamento do Tailwind CSS para estilo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome para ícones -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Tone.js para áudio e música de fundo -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     
     <style>
@@ -58,7 +55,6 @@
         </h1>
         <p class="text-lg text-gray-600 mt-2">Um presente de aniversário cheio de amor e organização!</p>
         
-        <!-- Botão para controlar a música (necessário para iniciar o áudio no celular) -->
         <button id="music-btn" onclick="toggleMusic()" class="mt-4 px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition shadow-md">
             <i class="fas fa-volume-mute"></i> Música: Desligada
         </button>
@@ -67,14 +63,12 @@
     </header>
 
     <main id="checklist-container" class="max-w-4xl mx-auto space-y-12">
-        <!-- O conteúdo será renderizado aqui pelo JavaScript -->
         <div id="loading-indicator" class="text-center p-6 bg-white rounded-xl shadow-lg">
             <i class="fas fa-spinner fa-spin text-3xl text-indigo-500"></i>
             <p class="mt-2 text-gray-600">Carregando a rotina...</p>
         </div>
     </main>
 
-    <!-- Modal de Confirmação (Substitui alert()) -->
     <div id="modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
             <h3 id="modal-title" class="text-xl font-bold text-gray-800 mb-4"></h3>
@@ -90,14 +84,33 @@
         </div>
     </div>
 
+    <script>
+        // Substitua os valores abaixo pelas SUAS CREDENCIAIS REAIS DO FIREBASE
+        // Obtenha a sua configuração no Console do Firebase (Configurações do Projeto -> Seus aplicativos -> Config)
+        const __app_id = 'sua-app-id-unica-aqui'; // ID de um aplicativo no Firebase. Ex: '1:1234567890:web:abcdef1234567890'
+        const __firebase_config = JSON.stringify({
+            apiKey: "SUA_API_KEY_AQUI",
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            projectId: "SEU-PROJECT-ID",
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "SEU_SENDER_ID",
+            appId: "SUA_APP_ID"
+            // Não precisa de measurementId neste caso.
+        });
+        
+        // Se você não tem um token de autenticação personalizado, use null. 
+        // A autenticação anônima será usada como fallback.
+        const __initial_auth_token = null; 
+    </script>
 
-    <!-- Firebase SDKs -->
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Variáveis Globais do Canvas (Obrigatórias)
+        // Elas agora são lidas do bloco <script> acima
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-checklist-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -153,7 +166,6 @@
             ]
         };
 
-        const FIREBASE_COLLECTION = `artifacts/${appId}/users/${userId}/birthday_checklist`;
         const FIREBASE_DOC_ID = 'tasks';
 
         // --- Configuração e Inicialização do Firebase ---
@@ -698,6 +710,7 @@
             } else {
                 console.error("Firebase Config ausente. O estado não será persistido.");
                 document.getElementById('loading-indicator').innerHTML = '<p class="text-red-500">Erro: Configuração do Firebase ausente. O progresso não será salvo.</p>';
+                renderChecklist(); // Pelo menos renderiza o checklist, mesmo sem salvar
             }
             
             // 4. Configura o áudio (mas não inicia o transporte)
