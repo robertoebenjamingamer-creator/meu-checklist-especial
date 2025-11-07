@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checklist de Rotina - Presente de Aniversário</title>
+    <!-- Carregamento do Tailwind CSS para estilo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Tone.js para áudio e música de fundo -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        :root {
+            --primary-color: #6366f1; /* Indigo 500 */
+            --secondary-color: #fcd34d; /* Amber 300 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Gray 100 */
+        }
+        .task-item {
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+        }
+        .task-completed {
+            background-color: #d1fae5; /* Green 100 */
+            border-left: 5px solid #10b981; /* Emerald 500 */
+        }
+        .task-completed .task-text {
+            text-decoration: line-through;
+            color: #6b7280; /* Gray 500 */
+        }
+        .task-default {
+            background-color: #ffffff;
+            border-left: 5px solid var(--primary-color);
+        }
+        .timer-running {
+            background-color: #fef3c7; /* Amber 100 */
+            border-left: 5px solid #fbbf24; /* Amber 400 */
+        }
+        /* Estilo para animação de botão */
+        .check-btn {
+            transition: transform 0.1s;
+        }
+        .check-btn:active {
+            transform: scale(0.9);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <header class="text-center mb-10">
+        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight">
+            🎉 Checklist de Rotina <span class="text-indigo-600">Especial</span> 🎉
+        </h1>
+        <p class="text-lg text-gray-600 mt-2">Um presente de aniversário cheio de amor e organização!</p>
+        
+        <!-- Botão para controlar a música (necessário para iniciar o áudio no celular) -->
+        <button id="music-btn" onclick="toggleMusic()" class="mt-4 px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition shadow-md">
+            <i class="fas fa-volume-mute"></i> Música: Desligada
+        </button>
+
+        <p id="user-id-display" class="text-xs text-gray-400 mt-2"></p>
+    </header>
+
+    <main id="checklist-container" class="max-w-4xl mx-auto space-y-12">
+        <!-- O conteúdo será renderizado aqui pelo JavaScript -->
+        <div id="loading-indicator" class="text-center p-6 bg-white rounded-xl shadow-lg">
+            <i class="fas fa-spinner fa-spin text-3xl text-indigo-500"></i>
+            <p class="mt-2 text-gray-600">Carregando a rotina...</p>
+        </div>
+    </main>
+
+    <!-- Modal de Confirmação (Substitui alert()) -->
+    <div id="modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 id="modal-title" class="text-xl font-bold text-gray-800 mb-4"></h3>
+            <p id="modal-message" class="text-gray-600 mb-6"></p>
+            <div class="flex justify-end space-x-3">
+                <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">
+                    Cancelar
+                </button>
+                <button id="modal-confirm-btn" class="px-4 py-2 bg-indigo-500 text-white font-semibold rounded-lg hover:bg-indigo-600 transition">
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variáveis Globais do Canvas (Obrigatórias)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-checklist-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        const STATE = {
+            tasks: {}, // {taskId: boolean} - Completion status
+            timerStart: null,
+            timerRemaining: 7200, // 2 hours in seconds (7200)
+            timerInterval: null,
+            lastCheckDate: null, // Rastreia o último dia de uso (YYYY-MM-DD)
+        };
+
+        const TASK_DATA = {
+            mom: [
+                { id: 'mom-1', text: 'Acordar' },
+                { id: 'mom-2', text: 'Dar comida para o peixe Bilisco' },
+                { id: 'mom-3', text: 'Fazer o café da manhã' },
+                { id: 'mom-4', text: 'Lavar a louça (pós-café)' },
+                { id: 'mom-5', text: 'Passar a vassoura na casa' },
+                { id: 'mom-6', text: 'Lavar a roupa (início)' },
+                { id: 'mom-7', text: 'Cozinhar o almoço' },
+                { id: 'mom-8', text: 'Lavar a louça (pós-almoço)' },
+                { id: 'mom-9', text: 'Reclamar com as crianças para tomar banho (pós-escola)' },
+                { id: 'mom-10', text: 'Ler a Bíblia' },
+                { id: 'mom-11', text: 'Orar' },
+                { id: 'mom-12', text: 'Fazer o café da noite (Jantar)' },
+                { id: 'mom-13', text: 'Lavar a louça (pós-jantar)' },
+            ],
+            kids: [
+                { id: 'kid-1', text: 'Levantar' },
+                { id: 'kid-2', text: 'Tomar café' },
+                { id: 'kid-3', text: 'Trocar a roupa' },
+                { id: 'kid-4', text: 'Ler a Bíblia' },
+                { id: 'kid-5', text: 'Escovar os dentes (manhã)' },
+                { id: 'kid-6', text: 'Ir para a Escola' },
+                { id: 'kid-7', text: 'Voltar da escola' },
+                { id: 'kid-8', text: 'Tomar banho (pós-escola)' },
+                { id: 'kid-9', text: 'Arrumar as coisas/organizar o quarto' },
+                { id: 'kid-10', text: 'Escovar os dentes (pós-jantar)' },
+                { id: 'kid-11', text: 'Fazer o dever de casa' },
+                { id: 'kid-12', text: '2h de Tela (Cronômetro) ⏳' },
+                { id: 'kid-13', text: 'Tomar o café/lanche da noite' },
+                { id: 'kid-14', text: 'Escovar os dentes (antes de dormir)' },
+                { id: 'kid-15', text: 'Dormir' },
+            ],
+            secondary: [
+                { id: 'sec-2', text: 'Trocar a água do aquário do Bilisco (duas em 2 semanas)' },
+            ]
+        };
+
+        const FIREBASE_COLLECTION = `artifacts/${appId}/users/${userId}/birthday_checklist`;
+        const FIREBASE_DOC_ID = 'tasks';
+
+        // --- Configuração e Inicialização do Firebase ---
+
+        function initFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing.");
+                return;
+            }
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('Debug'); // Para logs úteis
+            } catch (error) {
+                console.error("Erro ao inicializar Firebase:", error);
+            }
+        }
+
+        async function authenticate() {
+            if (!auth) return;
+
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Erro na autenticação:", error);
+                // Tenta anonimamente como fallback
+                await signInAnonymously(auth).catch(err => console.error("Falha na autenticação anônima:", err));
+            }
+        }
+
+        // --- Funções de Persistência (Firestore) ---
+
+        function getTaskRef() {
+            if (!db || !userId) return null;
+            // O caminho da coleção deve incluir o userId após a autenticação
+            return doc(db, `artifacts/${appId}/users/${userId}/birthday_checklist`, FIREBASE_DOC_ID);
+        }
+        
+        // Função auxiliar para obter o estado inicial de todas as tarefas
+        function getInitialTaskState() {
+            const initialTasks = {};
+            // Garante que as tarefas incluídas estejam inicializadas como false
+            const allTasks = [...TASK_DATA.mom, ...TASK_DATA.kids, ...TASK_DATA.secondary]; 
+            allTasks.forEach(task => { initialTasks[task.id] = false; });
+            return initialTasks;
+        }
+
+        async function loadTasks() {
+            const taskRef = getTaskRef();
+            const loadingIndicator = document.getElementById('loading-indicator');
+
+            if (!taskRef) {
+                console.error("Referência do Firestore não disponível.");
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '<p class="text-red-500">Erro: Não foi possível carregar o estado (Firestore indisponível).</p>';
+                }
+                return;
+            }
+            
+            // Obtém a data de hoje formatada como YYYY-MM-DD
+            const todayDateString = new Date().toISOString().slice(0, 10);
+
+            // Usar onSnapshot para escutar em tempo real
+            onSnapshot(taskRef, (docSnap) => {
+                if (loadingIndicator) {
+                    loadingIndicator.classList.add('hidden');
+                }
+                
+                let loadedData = {};
+                let checklistNeedsReset = false;
+
+                if (docSnap.exists()) {
+                    loadedData = docSnap.data();
+                    const lastCheckDate = loadedData.lastCheckDate;
+
+                    // CHECK 1: Se for um novo dia (a data salva é diferente da data de hoje), reinicia o checklist
+                    if (lastCheckDate && lastCheckDate !== todayDateString) {
+                        console.log("Novo dia detectado. Reiniciando checklist.");
+                        checklistNeedsReset = true;
+                    }
+
+                } else {
+                    console.log("Documento não encontrado. Inicializando estado.");
+                    checklistNeedsReset = true; // Inicializa se o documento não existir
+                }
+                
+                // Lógica de Reset
+                if (checklistNeedsReset) {
+                    STATE.tasks = getInitialTaskState();
+                    STATE.timerStart = null;
+                    STATE.timerRemaining = 7200; // Reseta para 2 horas
+                    STATE.lastCheckDate = todayDateString; // Define a nova data
+                    // Para qualquer intervalo de timer existente para evitar problemas
+                    if (STATE.timerInterval) {
+                        clearInterval(STATE.timerInterval);
+                        STATE.timerInterval = null;
+                    }
+                    saveState(); // Persiste o reset (Isso irá disparar onSnapshot novamente, mas a verificação de data impedirá um novo reset)
+                } else {
+                    // Carrega os dados existentes (incluindo o estado de resetado se for o caso)
+                    // Também garante que novas tarefas sejam inicializadas como false
+                    const existingTasks = loadedData.tasks || {};
+                    const allInitialTasks = getInitialTaskState();
+                    
+                    // Mescla o estado salvo com as tarefas iniciais (garante que novas tarefas sejam 'false')
+                    STATE.tasks = { ...allInitialTasks, ...existingTasks };
+                    
+                    STATE.timerStart = loadedData.timerStart || null;
+                    STATE.timerRemaining = loadedData.timerRemaining || 7200;
+                    STATE.lastCheckDate = loadedData.lastCheckDate || todayDateString;
+                }
+
+                console.log("Dados carregados/atualizados do Firestore.", STATE);
+
+                startTimer(); // Garante que o timer inicie/recalcule
+                renderChecklist();
+
+            }, (error) => {
+                console.error("Erro ao escutar dados do Firestore:", error);
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '<p class="text-red-500">Erro: Falha ao sincronizar dados.</p>';
+                }
+            });
+        }
+
+        async function saveState() {
+            if (!isAuthReady || !getTaskRef()) return;
+            
+            // Atualiza a data de última verificação (hoje) antes de salvar
+            const todayDateString = new Date().toISOString().slice(0, 10);
+            STATE.lastCheckDate = todayDateString; 
+
+            const stateToSave = {
+                tasks: STATE.tasks,
+                timerStart: STATE.timerStart,
+                timerRemaining: STATE.timerRemaining,
+                lastCheckDate: STATE.lastCheckDate // Salva a data para o reset diário
+            };
+
+            try {
+                // Salva na coleção privada do usuário
+                await setDoc(getTaskRef(), stateToSave, { merge: true });
+                // console.log("Estado salvo com sucesso.");
+            } catch (e) {
+                console.error("Erro ao salvar o estado: ", e);
+            }
+        }
+
+        // --- Funções de Áudio (Tone.js) ---
+        let clickSynth;
+        let ambientSynth;
+        let ambientLoop;
+        let isMusicPlaying = false;
+
+        function setupAudio() {
+            // 1. Click Sound (Um sino/clique rápido para feedback)
+            clickSynth = new Tone.MembraneSynth({
+                pitchDecay: 0.008,
+                envelope: {
+                    attack: 0.001,
+                    decay: 0.2,
+                    sustain: 0.01,
+                    release: 0.01,
+                }
+            }).toDestination();
+
+            // 2. Ambient Music (Volume baixo, loop simples e calmo)
+            ambientSynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sine" },
+                envelope: {
+                    attack: 2,
+                    decay: 0.1,
+                    sustain: 0.9,
+                    release: 4,
+                }
+            }).chain(new Tone.Volume(-20).toDestination()); // Volume definido para -20dB (muito baixo)
+
+            // 3. O Loop (progressão de acordes lenta)
+            const loopChords = ["C3", "G3", "A3", "F3"];
+            let chordIndex = 0;
+            ambientLoop = new Tone.Loop(time => {
+                const chord = loopChords[chordIndex % loopChords.length];
+                ambientSynth.triggerAttackRelease(chord, "4n", time);
+                chordIndex++;
+            }, "4n").start(0); 
+
+            Tone.Transport.bpm.value = 60; // Tempo lento e calmo
+        }
+
+        function playClick() {
+            // Toca o som de clique
+            if (clickSynth && Tone.context.state === 'running') {
+                clickSynth.triggerAttackRelease("G4", "8n");
+            }
+        }
+
+        window.toggleMusic = function() {
+            // O Tone.start() é necessário para ativar o áudio em navegadores móveis após interação
+            if (Tone.context.state !== 'running') {
+                Tone.start(); 
+            }
+
+            if (isMusicPlaying) {
+                Tone.Transport.stop();
+                isMusicPlaying = false;
+            } else {
+                Tone.Transport.start();
+                isMusicPlaying = true;
+            }
+            updateMusicButton();
+        }
+
+        function updateMusicButton() {
+            const btn = document.getElementById('music-btn');
+            if (btn) {
+                btn.innerHTML = isMusicPlaying 
+                    ? '<i class="fas fa-volume-up"></i> Música: Ligada' 
+                    : '<i class="fas fa-volume-mute"></i> Música: Desligada';
+                btn.classList.toggle('bg-gray-500', !isMusicPlaying);
+                btn.classList.toggle('hover:bg-gray-600', !isMusicPlaying);
+                btn.classList.toggle('bg-green-500', isMusicPlaying);
+                btn.classList.toggle('hover:bg-green-600', isMusicPlaying);
+            }
+        }
+
+
+        // --- Funções do Cronômetro (Task ID: kid-12) ---
+        
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function updateTimerDisplay() {
+            const timerElement = document.getElementById('timer-display');
+            const taskItem = document.getElementById('task-kid-12');
+            
+            if (!timerElement || !taskItem) return;
+
+            const display = formatTime(Math.max(0, STATE.timerRemaining));
+            timerElement.textContent = display;
+
+            taskItem.classList.remove('task-completed', 'timer-running', 'task-default');
+            
+            if (STATE.timerInterval) {
+                taskItem.classList.add('timer-running');
+            } else if (STATE.timerRemaining <= 0) {
+                taskItem.classList.add('task-completed');
+            } else {
+                taskItem.classList.add('task-default');
+            }
+        }
+
+        function toggleTimer() {
+            if (!isAuthReady) return;
+
+            if (STATE.timerInterval) {
+                // Parar o timer
+                clearInterval(STATE.timerInterval);
+                STATE.timerInterval = null;
+                // Recalcular o tempo restante exato antes de salvar
+                if (STATE.timerStart) {
+                    const elapsed = Math.floor((Date.now() - STATE.timerStart) / 1000);
+                    STATE.timerRemaining = Math.max(0, STATE.timerRemaining - elapsed); 
+                }
+                STATE.timerStart = null;
+                console.log("Cronômetro pausado. Restante:", STATE.timerRemaining);
+
+            } else {
+                // Iniciar/Continuar o timer
+                // Se estiver concluído e o tempo for 0, reseta para 2 horas
+                if (STATE.timerRemaining <= 0) {
+                    STATE.timerRemaining = 7200;
+                    STATE.tasks['kid-12'] = false; // Desmarca ao reiniciar
+                }
+                
+                STATE.timerStart = Date.now();
+                
+                // Reinicia a contagem
+                STATE.timerInterval = setInterval(() => {
+                    STATE.timerRemaining = Math.max(0, STATE.timerRemaining - 1);
+                    updateTimerDisplay();
+                    
+                    if (STATE.timerRemaining <= 0) {
+                        clearInterval(STATE.timerInterval);
+                        STATE.timerInterval = null;
+                        STATE.timerRemaining = 0;
+                        STATE.tasks['kid-12'] = true; // Marca como concluída
+                        console.log("Cronômetro finalizado!");
+                        saveState(); 
+                    }
+
+                }, 1000);
+                console.log("Cronômetro iniciado/continuado.");
+            }
+            playClick(); // Toca o som no início/pausa
+            // Atualiza o display e salva o novo status (iniciado/pausado)
+            updateTimerDisplay();
+            saveState(); 
+        }
+
+        function resetTimer() {
+            if (STATE.timerInterval) {
+                clearInterval(STATE.timerInterval);
+                STATE.timerInterval = null;
+            }
+            STATE.timerStart = null;
+            STATE.timerRemaining = 7200; // 2 horas (7200 segundos)
+            STATE.tasks['kid-12'] = false; // Desmarca a tarefa
+            
+            playClick(); // Toca o som no reset
+            updateTimerDisplay();
+            saveState();
+        }
+
+        function startTimer() {
+            if (STATE.timerInterval) {
+                clearInterval(STATE.timerInterval);
+                STATE.timerInterval = null;
+            }
+            
+            // Verifica se o timer estava rodando antes de recarregar
+            if (STATE.timerStart && STATE.timerRemaining > 0) {
+                
+                // Calcula o tempo decorrido desde o último STATE.timerStart
+                const elapsedSinceStart = Math.floor((Date.now() - STATE.timerStart) / 1000);
+                
+                // O tempo restante REAL deve ser o tempo restante persistido, menos o tempo decorrido
+                STATE.timerRemaining = Math.max(0, STATE.timerRemaining - elapsedSinceStart);
+
+                if (STATE.timerRemaining > 0) {
+                    // Reinicia o intervalo
+                    STATE.timerInterval = setInterval(() => {
+                        STATE.timerRemaining = Math.max(0, STATE.timerRemaining - 1);
+                        updateTimerDisplay();
+
+                        if (STATE.timerRemaining <= 0) {
+                            clearInterval(STATE.timerInterval);
+                            STATE.timerInterval = null;
+                            STATE.tasks['kid-12'] = true;
+                            saveState();
+                        }
+                    }, 1000);
+                    // console.log("Cronômetro retomado após recarga. Restante:", STATE.timerRemaining);
+                } else {
+                    STATE.timerRemaining = 0;
+                    STATE.tasks['kid-12'] = true; // Marca como concluída se o tempo tiver acabado
+                    saveState();
+                }
+            }
+            updateTimerDisplay();
+        }
+
+        // --- Funções de UI e Renderização ---
+
+        function showModal(title, message, onConfirm) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            
+            const modal = document.getElementById('modal');
+            modal.classList.remove('hidden');
+
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            const cancelBtn = document.getElementById('modal-cancel-btn');
+
+            const handleConfirm = () => {
+                onConfirm();
+                modal.classList.add('hidden');
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            const handleCancel = () => {
+                modal.classList.add('hidden');
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+        }
+
+        // Função para alternar o estado de uma tarefa
+        window.toggleTask = function(taskId) {
+            if (!isAuthReady) {
+                showModal("Erro de Autenticação", "Aguarde a autenticação para salvar o progresso.", () => {});
+                return;
+            }
+
+            const currentState = STATE.tasks[taskId] || false;
+            
+            if (taskId === 'kid-12') {
+                // A tarefa '2h de Tela' é controlada pelo timer.
+                if (currentState) {
+                    showModal(
+                        "Desmarcar Tarefa",
+                        "Tem certeza que deseja desmarcar '2h de Tela'? Isso irá resetar o cronômetro para 2 horas.",
+                        () => resetTimer()
+                    );
+                } else {
+                    // Se tentar marcar manualmente enquanto o tempo está rodando/disponível
+                    showModal(
+                        "Atenção - Cronômetro",
+                        "A tarefa '2h de Tela' é concluída automaticamente ao final do cronômetro. Clique no botão de Play/Pause para gerenciar o tempo.",
+                        () => {} // Apenas fecha o modal
+                    );
+                }
+                return;
+            }
+            
+            // Lógica normal para outras tarefas
+            STATE.tasks[taskId] = !currentState;
+            playClick(); // Toca o som ao marcar/desmarcar
+            saveState();
+        }
+        
+        // Função para construir o HTML de uma tarefa
+        function createTaskHtml(task, index, section) {
+            const isCompleted = STATE.tasks[task.id] === true;
+            let iconClass = 'fas fa-check';
+            let itemClasses = 'task-item p-4 rounded-xl flex items-center justify-between transition-all ' + (isCompleted ? 'task-completed' : 'task-default');
+            let contentHtml = `<span class="task-text text-gray-800 font-medium text-lg flex-1">${index}. ${task.text}</span>`;
+            let buttonHtml = '';
+
+            if (task.id === 'kid-12') { // Tratamento especial para o cronômetro
+                const isRunning = STATE.timerInterval !== null;
+                const isFinished = STATE.timerRemaining <= 0;
+                const buttonIcon = isRunning ? 'fas fa-pause' : (isFinished ? 'fas fa-undo' : 'fas fa-play');
+                const buttonText = isRunning ? 'Pausar' : (isFinished ? 'Reiniciar' : 'Iniciar');
+                
+                contentHtml = `
+                    <div class="flex-1 space-y-1">
+                        <span class="task-text text-gray-800 font-medium text-lg block">${index}. ${task.text}</span>
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-clock text-amber-600"></i>
+                            <span id="timer-display" class="font-mono text-xl text-amber-800">02:00:00</span>
+                        </div>
+                    </div>
+                `;
+                buttonHtml = `
+                    <button onclick="${isFinished ? 'resetTimer()' : 'toggleTimer()'}"
+                        class="check-btn px-4 py-2 ml-4 rounded-full ${isFinished ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600'} text-white transition duration-150 shadow-md">
+                        <i class="${buttonIcon}"></i> ${buttonText}
+                    </button>
+                    ${!isRunning && STATE.timerRemaining < 7200 && !isFinished ? `
+                        <button onclick="resetTimer()"
+                            class="check-btn px-4 py-2 ml-2 rounded-full bg-gray-500 text-white hover:bg-gray-600 transition duration-150 shadow-md">
+                            <i class="fas fa-undo"></i> Resetar
+                        </button>
+                    ` : ''}
+                `;
+            } else {
+                // Botão de checkmark padrão
+                const btnColor = isCompleted ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-indigo-500 hover:bg-indigo-600';
+                buttonHtml = `
+                    <button onclick="toggleTask('${task.id}')"
+                        class="check-btn w-10 h-10 ml-4 rounded-full ${btnColor} text-white flex items-center justify-center shadow-lg">
+                        <i class="${iconClass}"></i>
+                    </button>
+                `;
+            }
+
+            return `
+                <div id="task-${task.id}" class="${itemClasses}" data-task-id="${task.id}">
+                    ${contentHtml}
+                    <div class="flex items-center">
+                        ${buttonHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Função principal de renderização
+        function renderChecklist() {
+            const container = document.getElementById('checklist-container');
+            if (!container) return;
+
+            let html = '';
+
+            // Seção 1: Tarefas da Mãe
+            html += createSectionHtml('Tarefas da Mãe', 'fas fa-female', 'text-indigo-600', TASK_DATA.mom);
+            
+            // Seção 2: Rotina das Crianças
+            html += createSectionHtml('Rotina das Crianças', 'fas fa-child', 'text-pink-600', TASK_DATA.kids);
+
+            // Seção 3: Tarefas Secundárias (Quinzenais/ocasionais)
+            html += createSectionHtml('Tarefas Secundárias', 'fas fa-broom', 'text-teal-600', TASK_DATA.secondary);
+
+            container.innerHTML = html;
+            updateTimerDisplay(); // Garante que o display do timer seja inicializado
+            updateMusicButton(); // Garante que o botão de música reflita o estado atual
+        }
+
+        // Função auxiliar para criar as seções
+        function createSectionHtml(title, icon, colorClass, tasks) {
+            let tasksHtml = tasks.map((task, index) => createTaskHtml(task, index + 1, title)).join('');
+
+            return `
+                <section class="bg-white p-6 rounded-2xl shadow-xl">
+                    <h2 class="text-3xl font-bold mb-6 flex items-center ${colorClass}">
+                        <i class="${icon} mr-3"></i>
+                        ${title}
+                    </h2>
+                    <div class="space-y-4">
+                        ${tasksHtml}
+                    </div>
+                </section>
+            `;
+        }
+
+
+        // --- Inicialização ---
+
+        window.onload = function () {
+            // 1. Inicializa o Firebase
+            if (firebaseConfig) {
+                initFirebase();
+                
+                // 2. CONFIGURA O LISTENER DE ESTADO DE AUTENTICAÇÃO AQUI, DEPOIS QUE 'auth' ESTÁ DEFINIDO
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('user-id-display').textContent = `ID de Usuário: ${userId}`;
+                        isAuthReady = true;
+                        // Depois de autenticar, podemos carregar os dados
+                        await loadTasks();
+                    } else {
+                        console.log("Usuário deslogado/não autenticado. Usando anonimamente.");
+                    }
+                });
+                
+                // 3. Inicia o processo de autenticação
+                authenticate();
+
+            } else {
+                console.error("Firebase Config ausente. O estado não será persistido.");
+                document.getElementById('loading-indicator').innerHTML = '<p class="text-red-500">Erro: Configuração do Firebase ausente. O progresso não será salvo.</p>';
+            }
+            
+            // 4. Configura o áudio (mas não inicia o transporte)
+            setupAudio();
+        };
+
+        // Torna as funções globais acessíveis pelo onclick no HTML
+        window.toggleTimer = toggleTimer;
+        window.resetTimer = resetTimer;
+        window.showModal = showModal;
+
+    </script>
+</body>
+</html>
